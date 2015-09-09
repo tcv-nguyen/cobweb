@@ -81,8 +81,9 @@ class CobwebCrawler
   end
 
   def spawn_thread(&block)
-      while @queue_counter>0 && (@options[:crawl_limit].to_i == 0 || @options[:crawl_limit].to_i > @crawl_counter)
-        url = @redis.spop "queued"
+    depth_level = 0
+    while @queue_counter>0 && (@options[:crawl_limit].to_i == 0 || @options[:crawl_limit].to_i > @crawl_counter)
+      url = @redis.spop "queued"
       @queue_counter = 0 if url.nil?
 
       @options[:url] = url
@@ -115,14 +116,17 @@ class CobwebCrawler
             internal_links.reject!{|link| @redis.sismember("queued", link)}
             internal_links.reject!{|link| link.nil? || link.empty?}
           
-            internal_links.each do |link|
-              puts "Added #{link.to_s} to queue" if @debug
-              @redis.sadd "queued", link unless link.nil?
-              children = @redis.hget("navigation", url)
-              children = [] if children.nil?
-              children << link
-              @redis.hset "navigation", url, children
-              @queue_counter += 1
+            if @options.has_key?(:depth_level) && depth_level <= @options[:depth_level]
+              internal_links.each do |link|
+                puts "Added #{link.to_s} to queue" if @debug
+                @redis.sadd "queued", link unless link.nil?
+                children = @redis.hget("navigation", url)
+                children = [] if children.nil?
+                children << link
+                @redis.hset "navigation", url, children
+                @queue_counter += 1
+              end
+              depth_level += 1
             end
 
             if @options[:store_inbound_links]
